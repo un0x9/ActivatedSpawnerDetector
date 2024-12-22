@@ -1,0 +1,13 @@
+{
+  "Plugin-Class": "org.untab.Main",
+  "Name": "ActivatedSpawnerDetector",
+  "Version": "${plugin_version}",
+  "Description": "Automatically strips logs",
+  "Authors": [
+    "untab"
+  ],
+  "Minecraft-Versions": [
+    "1.21",
+    "1.21.1"
+  ]
+}
