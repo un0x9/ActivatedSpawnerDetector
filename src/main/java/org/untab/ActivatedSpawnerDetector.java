@@ -35,6 +35,7 @@ import java.util.*;
 public class ActivatedSpawnerDetector extends ToggleableModule {
 	private final BooleanSetting chestsOnly = new BooleanSetting("Log Chests Only", "Only sends a message if a chest is found within a 16 block radius", false);
 	private final Set<BlockPos> spawnerPositions = Collections.synchronizedSet(new HashSet<>());
+	UniqueQueue<LevelChunk> processedChunks = new UniqueQueue<>();
     /**
 	 * Constructor
 	 */
@@ -56,6 +57,7 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 			for (int chunkZ = playerChunkPos.z - renderDistance; chunkZ <= playerChunkPos.z + renderDistance; chunkZ++) {
 				assert mc.level != null;
 				LevelChunk chunk = mc.level.getChunk(chunkX, chunkZ);
+				if (processedChunks.contains(chunk)) continue;
 				chunk.getBlockEntities().values().parallelStream()
 						.filter(be -> be.getBlockState().getBlock() == Blocks.SPAWNER)
 						.forEach(blockEntity -> {
@@ -75,6 +77,8 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 								ChatUtils.print(String.format("There is a chest nearby an activated spawner! Block Position: x:%d, y:%d, z:%d", (int) chestPos.getCenter().x, (int) chestPos.getCenter().y, (int) chestPos.getCenter().z));
 						}
 				});
+				processedChunks.add(chunk);
+				if (processedChunks.size() > (renderDistance*2) * (renderDistance*2)) processedChunks.poll();
 			}
 		}
 
@@ -110,13 +114,17 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 	public void onEnable() {
 		super.onEnable();
 		spawnerPositions.clear();
+		processedChunks.clear();
 	}
 
 	@Override
 	public void onDisable() {
 		super.onDisable();
 		spawnerPositions.clear();
+		processedChunks.clear();
 	}
 
+
 }
+
 
