@@ -4,7 +4,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
-import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
 
 import org.rusherhack.client.api.utils.WorldUtils;
@@ -14,9 +13,15 @@ import org.rusherhack.client.api.feature.module.ModuleCategory;
 import org.rusherhack.client.api.feature.module.ToggleableModule;
 import org.rusherhack.core.event.subscribe.Subscribe;
 import org.rusherhack.core.setting.BooleanSetting;
+import org.rusherhack.client.api.events.render.EventRender3D;
+import org.rusherhack.client.api.render.IRenderer3D;
+import org.rusherhack.client.api.setting.ColorSetting;
+import org.rusherhack.core.utils.ColorUtils;
 
+import java.awt.*;
 import java.lang.reflect.Field;
 import java.util.*;
+import java.util.List;
 
 
 /**
@@ -28,14 +33,27 @@ import java.util.*;
 
 public class ActivatedSpawnerDetector extends ToggleableModule {
 	private final BooleanSetting chestsOnly = new BooleanSetting("Log Chests Only", "Only sends a message if a chest is found within a 16 block radius", false);
+	private final BooleanSetting chatNotify = new BooleanSetting("ChatNotify", "Notifies the chat", true);
+	private final BooleanSetting blockRender = new BooleanSetting("Block Render", "Renders blocks", true);
+	private final ColorSetting chestColor = new ColorSetting("Chest Color", Color.PINK)
+			//set whether alpha is enabled in the color picker
+			.setAlphaAllowed(false)
+			//sync the color with the theme color
+			.setThemeSync(true);
+	private final ColorSetting spawnerColor = new ColorSetting("Spawner Color", Color.RED)
+			.setAlphaAllowed(false)
+			//sync the color with the theme color
+			.setThemeSync(true);
+
 	private final Set<BlockPos> spawnerPositions = Collections.synchronizedSet(new HashSet<>());
+	private final Set<BlockPos> chestPositions = Collections.synchronizedSet(new HashSet<>());
 	Set<LevelChunk> processedChunks =  Collections.synchronizedSet(new HashSet<>());
     /**
 	 * Constructor
 	 */
 	public ActivatedSpawnerDetector() {
 		super("ActivatedSpawnerDetector", "", ModuleCategory.CLIENT);
-		this.registerSettings(this.chestsOnly);
+		this.registerSettings(this.blockRender, this.spawnerColor, this.chestColor, this.chestsOnly, this.chatNotify);
 	}
 
 	@Subscribe
@@ -45,14 +63,11 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 			return;
 		}
         assert mc.player != null;
-		int chunkCount = 0;
 		Set<LevelChunk> currentChunks = new HashSet<>();
 		List<LevelChunk> chunks = WorldUtils.getChunks();
 		for (LevelChunk chunk : chunks) {
 			currentChunks.add(chunk);
 			if (processedChunks.contains(chunk)) continue;
-			ChatUtils.print("DEBUG: PROCESSING NEW CHUNK: " + chunkCount);
-			chunkCount += 1;
 			chunk.getBlockEntities().values().parallelStream()
 					.filter(be -> be.getBlockState().getBlock() == Blocks.SPAWNER)
 					.forEach(blockEntity -> {
@@ -65,24 +80,28 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
                         assert mc.level != null;
                         if (mc.level.dimension().registryKey() == Level.NETHER.registryKey() && spawnDelay == 0)
 							return;
-						if (!chestsOnly.getValue())
+						if (!chestsOnly.getValue() && chatNotify.getValue()) {
 							synchronized (ChatUtils.class) {
-								if (!chestsOnly.getValue()) {
+								ChatUtils.print(String.format(
+										"Detected Activated Spawner! Block Position: x:%d, y:%d, z:%d",
+										(int) pos.getCenter().x, (int) pos.getCenter().y, (int) pos.getCenter().z
+								));
+							}
+						}
+						spawnerPositions.add(pos);
+						BlockPos chestPos = getChestPos(pos);
+						if (chestPos != null) {
+							chestPositions.add(chestPos);
+							if (chatNotify.getValue()) {
+								synchronized (ChatUtils.class) {
 									ChatUtils.print(String.format(
-											"Detected Activated Spawner! Block Position: x:%d, y:%d, z:%d",
-											(int) pos.getCenter().x, (int) pos.getCenter().y, (int) pos.getCenter().z
+											"There is a chest nearby an activated spawner! Block Position: x:%d, y:%d, z:%d",
+											(int) chestPos.getCenter().x, (int) chestPos.getCenter().y, (int) chestPos.getCenter().z
 									));
 								}
 							}
-						spawnerPositions.add(pos);
-						BlockPos chestPos = getChestPos(pos);
-						if (chestPos != null)
-							synchronized (ChatUtils.class) {
-								ChatUtils.print(String.format(
-										"There is a chest nearby an activated spawner! Block Position: x:%d, y:%d, z:%d",
-										(int) chestPos.getCenter().x, (int) chestPos.getCenter().y, (int) chestPos.getCenter().z
-								));
-							}
+
+						}
 					}
 			});
 			processedChunks.add(chunk);
@@ -116,10 +135,39 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 		}
 		return null;
 	}
+	@Subscribe
+	private void onRender3D(EventRender3D event) {
+		final IRenderer3D renderer = event.getRenderer();
+
+		final int colorSpawner = ColorUtils.transparency(this.spawnerColor.getValueRGB(), 0.5f); //fill colors look better when the alpha is not 100%
+		final int colorChest = ColorUtils.transparency(this.chestColor.getValueRGB(), 0.5f); //fill colors look better when the alpha is not 100%
+
+		//begin renderer
+		renderer.begin(event.getMatrixStack());
+
+		if (blockRender.getValue()) {
+			if (!chestsOnly.getValue()) {
+				synchronized (spawnerPositions) {
+					for (BlockPos spawner : spawnerPositions) {
+						renderer.drawBox(spawner, true, true, colorSpawner);
+					}
+				}
+			}
+			synchronized (chestPositions) {
+				for (BlockPos chest : chestPositions) {
+					renderer.drawBox(chest, true, true, colorChest);
+				}
+			}
+		}
+
+		//end renderer
+		renderer.end();
+	}
 	@Override
 	public void onEnable() {
 		super.onEnable();
 		spawnerPositions.clear();
+		chestPositions.clear();
 		processedChunks.clear();
 	}
 
@@ -127,6 +175,7 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 	public void onDisable() {
 		super.onDisable();
 		spawnerPositions.clear();
+		chestPositions.clear();
 		processedChunks.clear();
 	}
 
