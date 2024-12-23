@@ -1,19 +1,13 @@
 package org.untab;
 
-import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
-import net.minecraft.core.BlockBox;
-import net.minecraft.core.BlockMath;
-import net.minecraft.client.renderer.LevelRenderer;
 
+import org.rusherhack.client.api.utils.WorldUtils;
 import org.rusherhack.client.api.utils.ChatUtils;
 import org.rusherhack.client.api.events.client.EventUpdate;
 import org.rusherhack.client.api.feature.module.ModuleCategory;
@@ -35,7 +29,7 @@ import java.util.*;
 public class ActivatedSpawnerDetector extends ToggleableModule {
 	private final BooleanSetting chestsOnly = new BooleanSetting("Log Chests Only", "Only sends a message if a chest is found within a 16 block radius", false);
 	private final Set<BlockPos> spawnerPositions = Collections.synchronizedSet(new HashSet<>());
-	UniqueQueue<LevelChunk> processedChunks = new UniqueQueue<>();
+	Set<LevelChunk> processedChunks =  Collections.synchronizedSet(new HashSet<>());
     /**
 	 * Constructor
 	 */
@@ -50,38 +44,50 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 		if (!this.isToggled()) {
 			return;
 		}
-		int renderDistance = mc.options.renderDistance().get();
         assert mc.player != null;
-        ChunkPos playerChunkPos = new ChunkPos(mc.player.blockPosition());
-		for (int chunkX = playerChunkPos.x - renderDistance; chunkX <= playerChunkPos.x + renderDistance; chunkX++) {
-			for (int chunkZ = playerChunkPos.z - renderDistance; chunkZ <= playerChunkPos.z + renderDistance; chunkZ++) {
-				assert mc.level != null;
-				LevelChunk chunk = mc.level.getChunk(chunkX, chunkZ);
-				if (processedChunks.contains(chunk)) continue;
-				chunk.getBlockEntities().values().parallelStream()
-						.filter(be -> be.getBlockState().getBlock() == Blocks.SPAWNER)
-						.forEach(blockEntity -> {
+		int chunkCount = 0;
+		Set<LevelChunk> currentChunks = new HashSet<>();
+		List<LevelChunk> chunks = WorldUtils.getChunks();
+		for (LevelChunk chunk : chunks) {
+			currentChunks.add(chunk);
+			if (processedChunks.contains(chunk)) continue;
+			ChatUtils.print("DEBUG: PROCESSING NEW CHUNK: " + chunkCount);
+			chunkCount += 1;
+			chunk.getBlockEntities().values().parallelStream()
+					.filter(be -> be.getBlockState().getBlock() == Blocks.SPAWNER)
+					.forEach(blockEntity -> {
 
-						SpawnerBlockEntity spawner = (SpawnerBlockEntity) blockEntity;
-						int spawnDelay = getSpawnerDelay(spawner);
-						BlockPos pos = spawner.getBlockPos();
+					SpawnerBlockEntity spawner = (SpawnerBlockEntity) blockEntity;
+					int spawnDelay = getSpawnerDelay(spawner);
+					BlockPos pos = spawner.getBlockPos();
 
-						if (!spawnerPositions.contains(pos) && spawnDelay != 20) {
-							if (mc.level.dimension().registryKey() == Level.NETHER.registryKey() && spawnDelay == 0)
-								return;
-							if (!chestsOnly.getValue())
-								ChatUtils.print(String.format("Detected Activated Spawner! Block Position: x:%d, y:%d, z:%d", (int) pos.getCenter().x, (int) pos.getCenter().y, (int) pos.getCenter().z));
-							spawnerPositions.add(pos);
-							BlockPos chestPos = getChestPos(pos);
-							if (chestPos != null)
-								ChatUtils.print(String.format("There is a chest nearby an activated spawner! Block Position: x:%d, y:%d, z:%d", (int) chestPos.getCenter().x, (int) chestPos.getCenter().y, (int) chestPos.getCenter().z));
-						}
-				});
-				processedChunks.add(chunk);
-				if (processedChunks.size() > (renderDistance*2) * (renderDistance*2)) processedChunks.poll();
-			}
+					if (!spawnerPositions.contains(pos) && spawnDelay != 20) {
+                        assert mc.level != null;
+                        if (mc.level.dimension().registryKey() == Level.NETHER.registryKey() && spawnDelay == 0)
+							return;
+						if (!chestsOnly.getValue())
+							synchronized (ChatUtils.class) {
+								if (!chestsOnly.getValue()) {
+									ChatUtils.print(String.format(
+											"Detected Activated Spawner! Block Position: x:%d, y:%d, z:%d",
+											(int) pos.getCenter().x, (int) pos.getCenter().y, (int) pos.getCenter().z
+									));
+								}
+							}
+						spawnerPositions.add(pos);
+						BlockPos chestPos = getChestPos(pos);
+						if (chestPos != null)
+							synchronized (ChatUtils.class) {
+								ChatUtils.print(String.format(
+										"There is a chest nearby an activated spawner! Block Position: x:%d, y:%d, z:%d",
+										(int) chestPos.getCenter().x, (int) chestPos.getCenter().y, (int) chestPos.getCenter().z
+								));
+							}
+					}
+			});
+			processedChunks.add(chunk);
 		}
-
+		processedChunks.retainAll(currentChunks);
 	}
 
 	private int getSpawnerDelay(SpawnerBlockEntity spawner) {
