@@ -84,30 +84,47 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
                         assert mc.level != null;
                         if (mc.level.dimension().registryKey() == Level.NETHER.registryKey() && spawnDelay == 0)
 							return;
-						if (!chestsOnly.getValue() && chatNotify.getValue()) {
-							synchronized (ChatUtils.class) {
-								ChatUtils.print(String.format(
-										"Detected Activated Spawner! Block Position: x:%d, y:%d, z:%d",
-										(int) pos.getCenter().x, (int) pos.getCenter().y, (int) pos.getCenter().z
+						if (!chestsOnly.getValue()) {
+
+							if (chatNotify.getValue()) {
+								synchronized (ChatUtils.class) {
+									ChatUtils.print(String.format(
+											"Detected Activated Spawner! Block Position: x:%d, y:%d, z:%d",
+											(int) pos.getCenter().x, (int) pos.getCenter().y, (int) pos.getCenter().z
+									));
+								}
+							}
+
+							if (soundAlert.getValue()) {
+								mc.execute(() -> mc.level.playLocalSound(
+										mc.player.getX(),
+										mc.player.getY(),
+										mc.player.getZ(),
+										SoundEvents.EXPERIENCE_ORB_PICKUP,
+										SoundSource.PLAYERS,
+										1.0F,
+										1.0F,
+										false
 								));
 							}
 						}
-						if (soundAlert.getValue()) {
-							mc.execute(() -> mc.level.playLocalSound(
-									mc.player.getX(),
-									mc.player.getY(),
-									mc.player.getZ(),
-									SoundEvents.EXPERIENCE_ORB_PICKUP,
-									SoundSource.PLAYERS,
-									1.0F,
-									1.0F,
-									false
-							));
-						}
+
 						spawnerPositions.add(pos);
 						BlockPos chestPos = getChestPos(pos);
 						if (chestPos != null) {
 							chestPositions.add(chestPos);
+							if (soundAlert.getValue()) {
+								mc.execute(() -> mc.level.playLocalSound(
+										mc.player.getX(),
+										mc.player.getY(),
+										mc.player.getZ(),
+										SoundEvents.EXPERIENCE_ORB_PICKUP,
+										SoundSource.PLAYERS,
+										1.0F,
+										1.0F,
+										false
+								));
+							}
 							if (chatNotify.getValue()) {
 								synchronized (ChatUtils.class) {
 									ChatUtils.print(String.format(
