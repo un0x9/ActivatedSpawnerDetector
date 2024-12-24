@@ -1,6 +1,8 @@
 package org.untab;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
@@ -18,6 +20,7 @@ import org.rusherhack.client.api.render.IRenderer3D;
 import org.rusherhack.client.api.setting.ColorSetting;
 import org.rusherhack.core.utils.ColorUtils;
 
+
 import java.awt.*;
 import java.lang.reflect.Field;
 import java.util.*;
@@ -33,6 +36,7 @@ import java.util.List;
 
 public class ActivatedSpawnerDetector extends ToggleableModule {
 	private final BooleanSetting chestsOnly = new BooleanSetting("Log Chests Only", "Only sends a message if a chest is found within a 16 block radius", false);
+	private final BooleanSetting soundAlert = new BooleanSetting("Sound alert", "Make alert noise", true);
 	private final BooleanSetting chatNotify = new BooleanSetting("ChatNotify", "Notifies the chat", true);
 	private final BooleanSetting blockRender = new BooleanSetting("Block Render", "Renders blocks", true);
 	private final ColorSetting chestColor = new ColorSetting("Chest Color", Color.PINK)
@@ -53,7 +57,7 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 	 */
 	public ActivatedSpawnerDetector() {
 		super("ActivatedSpawnerDetector", "", ModuleCategory.CLIENT);
-		this.registerSettings(this.blockRender, this.spawnerColor, this.chestColor, this.chestsOnly, this.chatNotify);
+		this.registerSettings(this.blockRender, this.spawnerColor, this.chestColor, this.chestsOnly, this.chatNotify, this.soundAlert);
 	}
 
 	@Subscribe
@@ -68,7 +72,7 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 		for (LevelChunk chunk : chunks) {
 			currentChunks.add(chunk);
 			if (processedChunks.contains(chunk)) continue;
-			chunk.getBlockEntities().values().parallelStream()
+			chunk.getBlockEntities().values().stream()
 					.filter(be -> be.getBlockState().getBlock() == Blocks.SPAWNER)
 					.forEach(blockEntity -> {
 
@@ -87,6 +91,18 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 										(int) pos.getCenter().x, (int) pos.getCenter().y, (int) pos.getCenter().z
 								));
 							}
+						}
+						if (soundAlert.getValue()) {
+							mc.execute(() -> mc.level.playLocalSound(
+									mc.player.getX(),
+									mc.player.getY(),
+									mc.player.getZ(),
+									SoundEvents.EXPERIENCE_ORB_PICKUP,
+									SoundSource.PLAYERS,
+									1.0F,
+									1.0F,
+									false
+							));
 						}
 						spawnerPositions.add(pos);
 						BlockPos chestPos = getChestPos(pos);
