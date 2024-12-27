@@ -185,17 +185,10 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 		//begin renderer
 		renderer.begin(event.getMatrixStack());
 
-		double distance = 75;
-		renderer.setLineWidth((int)distance);
 		if (chestTracers.getValue()) {
 			synchronized (chestPositions) {
 				for (BlockPos chest : chestPositions) {
-					Vec3 cameraPos = EntityUtils.interpolateEntityVec(event.getCamera().getEntity(), event.getPartialTicks());
-					Vec3 crosshairPosition = cameraPos.add(
-							event.getCamera().getLookVector().x * distance,
-							event.getCamera().getLookVector().y * distance,
-							event.getCamera().getLookVector().z * distance);
-					renderer.drawLine(chest.getCenter(), crosshairPosition, colorChest);
+					drawTracers(event, chest.getCenter(), colorChest);
 				}
 			}
 		}
@@ -203,16 +196,10 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 		if (spawnerTracers.getValue()) {
 			synchronized (spawnerPositions) {
 				for (BlockPos spawner : spawnerPositions) {
-					Vec3 cameraPos = EntityUtils.interpolateEntityVec(event.getCamera().getEntity(), event.getPartialTicks());
-					Vec3 crosshairPosition = cameraPos.add(
-							event.getCamera().getLookVector().x * distance,
-							event.getCamera().getLookVector().y * distance,
-							event.getCamera().getLookVector().z * distance);
-					renderer.drawLine(spawner.getCenter(), crosshairPosition, colorSpawner);
+					drawTracers(event, spawner.getCenter(), colorSpawner);
 				}
 			}
 		}
-		renderer.setLineWidth(1);
 
 		if (blockRender.getValue()) {
 			if (!chestsOnly.getValue()) {
@@ -231,6 +218,18 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 
 		//end renderer
 		renderer.end();
+	}
+	private void drawTracers(EventRender3D event, Vec3 pos, int color) {
+		final IRenderer3D renderer = event.getRenderer();
+		double distance = 75;
+		renderer.setLineWidth((int)distance);
+		Vec3 cameraPos = EntityUtils.interpolateEntityVec(event.getCamera().getEntity(), event.getPartialTicks());
+		Vec3 crosshairPosition = cameraPos.add(
+				event.getCamera().getLookVector().x * distance,
+				event.getCamera().getLookVector().y * distance,
+				event.getCamera().getLookVector().z * distance);
+		renderer.drawLine(pos, crosshairPosition, color);
+		renderer.setLineWidth(1);
 	}
 	@Override
 	public void onEnable() {
