@@ -117,9 +117,8 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 						}
 
 						spawnerPositions.add(pos);
-						BlockPos chestPos = getChestPos(pos);
-						if (chestPos != null) {
-							chestPositions.add(chestPos);
+						List<BlockPos> chestPos = getChestPos(pos);
+						if (!chestPos.isEmpty()) {
 							if (soundAlert.getValue()) {
 								mc.execute(() -> mc.level.playLocalSound(
 										mc.player.getX(),
@@ -132,15 +131,18 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 										false
 								));
 							}
-							if (chatNotify.getValue()) {
-								synchronized (ChatUtils.class) {
-									ChatUtils.print(String.format(
-											"There is a chest nearby an activated spawner! Block Position: x:%d, y:%d, z:%d",
-											(int) chestPos.getCenter().x, (int) chestPos.getCenter().y, (int) chestPos.getCenter().z
-									));
+							for (BlockPos chest : chestPos) {
+								chestPositions.add(chest);
+
+								if (chatNotify.getValue()) {
+									synchronized (ChatUtils.class) {
+										ChatUtils.print(String.format(
+												"There is a chest nearby an activated spawner! Block Position: x:%d, y:%d, z:%d",
+												(int) chest.getCenter().x, (int) chest.getCenter().y, (int) chest.getCenter().z
+										));
+									}
 								}
 							}
-
 						}
 					}
 			});
@@ -161,19 +163,20 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 		}
 	}
 
-	public BlockPos getChestPos(BlockPos pos) {
+	public List<BlockPos> getChestPos(BlockPos pos) {
+		List<BlockPos> chests = new ArrayList<BlockPos>();
 		for (int x = -16; x < 17; x++) {
 			for (int y = -16; y < 17; y++) {
 				for (int z = -16; z < 17; z++) {
 					BlockPos bpos = new BlockPos(pos.getX() + x, pos.getY() + y, pos.getZ() + z);
                     assert mc.level != null;
                     if (mc.level.getBlockState(bpos).getBlock() == Blocks.CHEST) {
-						return bpos;
+						chests.add(bpos);
 					}
 				}
 			}
 		}
-		return null;
+		return chests;
 	}
 	@Subscribe
 	private void onRender3D(EventRender3D event) {
@@ -185,39 +188,37 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 		//begin renderer
 		renderer.begin(event.getMatrixStack());
 
-		if (chestTracers.getValue()) {
-			synchronized (chestPositions) {
-				for (BlockPos chest : chestPositions) {
+		synchronized (chestPositions) {
+			for (BlockPos chest : chestPositions) {
+				if (isBlockPosOutsideRenderDistance(chest))
+					chestPositions.remove(chest);
+				if (chestTracers.getValue())
 					drawTracers(event, chest.getCenter(), colorChest);
-				}
-			}
-		}
-
-		if (spawnerTracers.getValue()) {
-			synchronized (spawnerPositions) {
-				for (BlockPos spawner : spawnerPositions) {
-					drawTracers(event, spawner.getCenter(), colorSpawner);
-				}
-			}
-		}
-
-		if (blockRender.getValue()) {
-			if (!chestsOnly.getValue()) {
-				synchronized (spawnerPositions) {
-					for (BlockPos spawner : spawnerPositions) {
-						renderer.drawBox(spawner, true, true, colorSpawner);
-					}
-				}
-			}
-			synchronized (chestPositions) {
-				for (BlockPos chest : chestPositions) {
+				if (blockRender.getValue())
 					renderer.drawBox(chest, true, true, colorChest);
-				}
+			}
+		}
+		synchronized (spawnerPositions) {
+			for (BlockPos spawner : spawnerPositions) {
+				if (isBlockPosOutsideRenderDistance(spawner))
+					spawnerPositions.remove(spawner);
+				if (spawnerTracers.getValue())
+					drawTracers(event, spawner.getCenter(), colorSpawner);
+				if (blockRender.getValue() && !chestsOnly.getValue())
+					renderer.drawBox(spawner, true, true, colorSpawner);
 			}
 		}
 
 		//end renderer
 		renderer.end();
+	}
+	public boolean isBlockPosOutsideRenderDistance(BlockPos blockPos) {
+        assert mc.player != null;
+        Vec3 playerPos = mc.player.getEyePosition();
+		int renderDistance = mc.options.renderDistance().get();
+		int maxDistance = renderDistance * 16;  // Each chunk is 16x16 blocks
+		double distance = playerPos.distanceToSqr(blockPos.getCenter());
+		return distance > maxDistance * maxDistance;
 	}
 	private void drawTracers(EventRender3D event, Vec3 pos, int color) {
 		final IRenderer3D renderer = event.getRenderer();
