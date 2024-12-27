@@ -18,7 +18,6 @@ import org.rusherhack.client.api.feature.module.ToggleableModule;
 import org.rusherhack.core.event.subscribe.Subscribe;
 import org.rusherhack.core.setting.BooleanSetting;
 import org.rusherhack.client.api.events.render.EventRender3D;
-//import org.rusherhack.client.api.events.render.EventRender2D;
 import org.rusherhack.client.api.utils.EntityUtils;
 import org.rusherhack.client.api.render.IRenderer3D;
 import org.rusherhack.client.api.setting.ColorSetting;
@@ -39,6 +38,8 @@ import java.util.List;
  * @credits etianl
  */
 
+
+
 public class ActivatedSpawnerDetector extends ToggleableModule {
 	private final BooleanSetting chestsOnly = new BooleanSetting("Log Chests Only", "Only sends a message if a chest is found within a 16 block radius", false);
 	private final BooleanSetting chestTracers = new BooleanSetting("Chest Tracers", "Tracers for Chests", false);
@@ -56,9 +57,12 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 			//sync the color with the theme color
 			.setThemeSync(true);
 
-	private final Set<BlockPos> spawnerPositions = Collections.synchronizedSet(new HashSet<>());
-	private final Set<BlockPos> chestPositions = Collections.synchronizedSet(new HashSet<>());
-	Set<LevelChunk> processedChunks =  Collections.synchronizedSet(new HashSet<>());
+	public class ChunkDetectorGroup {
+		public final Set<BlockPos> spawnerPositions = Collections.synchronizedSet(new HashSet<>());
+		public final Set<BlockPos> chestPositions = Collections.synchronizedSet(new HashSet<>());
+    }
+
+	Map<LevelChunk, ChunkDetectorGroup> processedChunks = Collections.synchronizedMap(new HashMap<>());
     /**
 	 * Constructor
 	 */
@@ -74,11 +78,12 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 			return;
 		}
         assert mc.player != null;
-		Set<LevelChunk> currentChunks = new HashSet<>();
+		Map<LevelChunk, ChunkDetectorGroup> currentChunks = Collections.synchronizedMap(new HashMap<>());
 		List<LevelChunk> chunks = WorldUtils.getChunks();
 		for (LevelChunk chunk : chunks) {
-			currentChunks.add(chunk);
-			if (processedChunks.contains(chunk)) continue;
+			ChunkDetectorGroup newCollection = new ChunkDetectorGroup();
+			currentChunks.put(chunk, newCollection);
+			if (processedChunks.containsKey(chunk)) continue;
 			chunk.getBlockEntities().values().stream()
 					.filter(be -> be.getBlockState().getBlock() == Blocks.SPAWNER)
 					.forEach(blockEntity -> {
@@ -87,7 +92,7 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 					int spawnDelay = getSpawnerDelay(spawner);
 					BlockPos pos = spawner.getBlockPos();
 
-					if (!spawnerPositions.contains(pos) && spawnDelay != 20) {
+					if (spawnDelay != 20) {
                         assert mc.level != null;
                         if (mc.level.dimension().registryKey() == Level.NETHER.registryKey() && spawnDelay == 0)
 							return;
@@ -116,7 +121,7 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 							}
 						}
 
-						spawnerPositions.add(pos);
+						newCollection.spawnerPositions.add(pos);
 						List<BlockPos> chestPos = getChestPos(pos);
 						if (!chestPos.isEmpty()) {
 							if (soundAlert.getValue()) {
@@ -132,7 +137,7 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 								));
 							}
 							for (BlockPos chest : chestPos) {
-								chestPositions.add(chest);
+								newCollection.chestPositions.add(chest);
 
 								if (chatNotify.getValue()) {
 									synchronized (ChatUtils.class) {
@@ -146,9 +151,9 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 						}
 					}
 			});
-			processedChunks.add(chunk);
+			processedChunks.put(chunk, newCollection);
 		}
-		processedChunks.retainAll(currentChunks);
+		processedChunks.entrySet().removeIf(entry -> !currentChunks.containsKey(entry.getKey()));
 	}
 
 	private int getSpawnerDelay(SpawnerBlockEntity spawner) {
@@ -187,25 +192,28 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 
 		//begin renderer
 		renderer.begin(event.getMatrixStack());
+		synchronized (processedChunks) { // Ensure thread-safety while accessing the map
+			for (Map.Entry<LevelChunk, ChunkDetectorGroup> entry : processedChunks.entrySet()) {
+				ChunkDetectorGroup chunkGroup = entry.getValue();
 
-		synchronized (chestPositions) {
-			for (BlockPos chest : chestPositions) {
-				if (isBlockPosOutsideRenderDistance(chest))
-					chestPositions.remove(chest);
-				if (chestTracers.getValue())
-					drawTracers(event, chest.getCenter(), colorChest);
-				if (blockRender.getValue())
-					renderer.drawBox(chest, true, true, colorChest);
-			}
-		}
-		synchronized (spawnerPositions) {
-			for (BlockPos spawner : spawnerPositions) {
-				if (isBlockPosOutsideRenderDistance(spawner))
-					spawnerPositions.remove(spawner);
-				if (spawnerTracers.getValue())
-					drawTracers(event, spawner.getCenter(), colorSpawner);
-				if (blockRender.getValue() && !chestsOnly.getValue())
-					renderer.drawBox(spawner, true, true, colorSpawner);
+				// Iterate over all spawnerPositions in the current ChunkDetectorGroup
+				synchronized (chunkGroup.spawnerPositions) { // Ensure thread-safety for spawnerPositions set
+					for (BlockPos spawner : chunkGroup.spawnerPositions) {
+						if (spawnerTracers.getValue())
+							drawTracers(event, spawner.getCenter(), colorSpawner);
+						if (blockRender.getValue() && !chestsOnly.getValue())
+							renderer.drawBox(spawner, true, true, colorSpawner);
+					}
+				}
+				synchronized (chunkGroup.chestPositions) { // Ensure thread-safety for spawnerPositions set
+					for (BlockPos chest : chunkGroup.chestPositions) {
+						if (chestTracers.getValue())
+							drawTracers(event, chest.getCenter(), colorChest);
+						if (blockRender.getValue())
+							renderer.drawBox(chest, true, true, colorChest);
+					}
+				}
+
 			}
 		}
 
@@ -235,16 +243,12 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 	@Override
 	public void onEnable() {
 		super.onEnable();
-		spawnerPositions.clear();
-		chestPositions.clear();
 		processedChunks.clear();
 	}
 
 	@Override
 	public void onDisable() {
 		super.onDisable();
-		spawnerPositions.clear();
-		chestPositions.clear();
 		processedChunks.clear();
 	}
 
