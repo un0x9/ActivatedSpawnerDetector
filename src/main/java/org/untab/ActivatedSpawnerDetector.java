@@ -1,5 +1,6 @@
 package org.untab;
 
+import net.minecraft.client.renderer.blockentity.ChestRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -8,6 +9,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
 import net.minecraft.world.level.chunk.LevelChunk;
 
+import net.minecraft.world.phys.Vec3;
 import org.rusherhack.client.api.utils.WorldUtils;
 import org.rusherhack.client.api.utils.ChatUtils;
 import org.rusherhack.client.api.events.client.EventUpdate;
@@ -16,10 +18,13 @@ import org.rusherhack.client.api.feature.module.ToggleableModule;
 import org.rusherhack.core.event.subscribe.Subscribe;
 import org.rusherhack.core.setting.BooleanSetting;
 import org.rusherhack.client.api.events.render.EventRender3D;
+//import org.rusherhack.client.api.events.render.EventRender2D;
+import org.rusherhack.client.api.utils.EntityUtils;
 import org.rusherhack.client.api.render.IRenderer3D;
 import org.rusherhack.client.api.setting.ColorSetting;
 import org.rusherhack.core.utils.ColorUtils;
 
+import org.joml.Vector3f;
 
 import java.awt.*;
 import java.lang.reflect.Field;
@@ -36,6 +41,8 @@ import java.util.List;
 
 public class ActivatedSpawnerDetector extends ToggleableModule {
 	private final BooleanSetting chestsOnly = new BooleanSetting("Log Chests Only", "Only sends a message if a chest is found within a 16 block radius", false);
+	private final BooleanSetting chestTracers = new BooleanSetting("Chest Tracers", "Tracers for Chests", false);
+	private final BooleanSetting spawnerTracers = new BooleanSetting("Spawner Tracers", "Tracers for Spawners", false);
 	private final BooleanSetting soundAlert = new BooleanSetting("Sound alert", "Make alert noise", true);
 	private final BooleanSetting chatNotify = new BooleanSetting("ChatNotify", "Notifies the chat", true);
 	private final BooleanSetting blockRender = new BooleanSetting("Block Render", "Renders blocks", true);
@@ -57,7 +64,7 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 	 */
 	public ActivatedSpawnerDetector() {
 		super("ActivatedSpawnerDetector", "", ModuleCategory.CLIENT);
-		this.registerSettings(this.blockRender, this.spawnerColor, this.chestColor, this.chestsOnly, this.chatNotify, this.soundAlert);
+		this.registerSettings(this.blockRender, this.spawnerColor, this.chestColor, this.chestsOnly, this.chestTracers, this.spawnerTracers, this.chatNotify, this.soundAlert);
 	}
 
 	@Subscribe
@@ -177,6 +184,35 @@ public class ActivatedSpawnerDetector extends ToggleableModule {
 
 		//begin renderer
 		renderer.begin(event.getMatrixStack());
+
+		double distance = 75;
+		renderer.setLineWidth((int)distance);
+		if (chestTracers.getValue()) {
+			synchronized (chestPositions) {
+				for (BlockPos chest : chestPositions) {
+					Vec3 cameraPos = EntityUtils.interpolateEntityVec(event.getCamera().getEntity(), event.getPartialTicks());
+					Vec3 crosshairPosition = cameraPos.add(
+							event.getCamera().getLookVector().x * distance,
+							event.getCamera().getLookVector().y * distance,
+							event.getCamera().getLookVector().z * distance);
+					renderer.drawLine(chest.getCenter(), crosshairPosition, colorChest);
+				}
+			}
+		}
+
+		if (spawnerTracers.getValue()) {
+			synchronized (spawnerPositions) {
+				for (BlockPos spawner : spawnerPositions) {
+					Vec3 cameraPos = EntityUtils.interpolateEntityVec(event.getCamera().getEntity(), event.getPartialTicks());
+					Vec3 crosshairPosition = cameraPos.add(
+							event.getCamera().getLookVector().x * distance,
+							event.getCamera().getLookVector().y * distance,
+							event.getCamera().getLookVector().z * distance);
+					renderer.drawLine(spawner.getCenter(), crosshairPosition, colorSpawner);
+				}
+			}
+		}
+		renderer.setLineWidth(1);
 
 		if (blockRender.getValue()) {
 			if (!chestsOnly.getValue()) {
