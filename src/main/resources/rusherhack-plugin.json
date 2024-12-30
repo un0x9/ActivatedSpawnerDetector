@@ -2,7 +2,7 @@
   "Plugin-Class": "org.untab.Main",
   "Name": "ActivatedSpawnerDetector",
   "Version": "${plugin_version}",
-  "Description": "Automatically strips logs",
+  "Description": "Detects spawners that have been activated by a player",
   "Authors": [
     "untab"
   ],
